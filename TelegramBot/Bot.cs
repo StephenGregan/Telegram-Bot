@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
@@ -8,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace TelegramBot
 {
@@ -174,6 +176,77 @@ namespace TelegramBot
                             var fat = 0.0;
                             var fiber = 0.0;
                             stringBuilder.Append(Regex.Match(food, @"<title>(.*?)\ \|.*</title>").Groups[1].Value.Replace("Calories in ", "").Trim() + " ");
+                            stringBuilder.Append(Regex.Match(food, @"<select name=""units"">*?>(.*?)<\/option>", RegexOptions.IgnoreCase).Groups[1].Value.Trim() + "\r\n");
+                            foreach (Match fact in Regex.Matches(food, @"<td class=""(calories|label\amount)"">([a-zA-Z0-9\ &;<>=\/\""\.]*)<\/td>"))
+                            {
+                                switch (fact.Groups[1].Value.Trim().ToLowerInvariant())
+                                {
+                                    case "calories":
+                                        stringBuilder.Append("Calories: " + fact.Groups[2].Value.Replace("Calories&nbsp;<span class=\"amount\">", "").Replace("</span>", "") + ", ");
+                                        break;
+                                    case "label":
+                                        label = fact.Groups[2].Value.Trim();
+                                        break;
+                                    case "amount":
+                                        stringBuilder.Append(label + ": " + fact.Groups[2].Value + ", ");
+                                        switch (label.ToLowerInvariant())
+                                        {
+                                            case "protein":
+                                                protein = Convert.ToDouble(fact.Groups[2].Value.Replace("mg", "").Replace("g", "").Replace("&lt;", "").Replace("&gt;", ""));
+                                                break;
+                                            case "total carbs":
+                                                carbs = Convert.ToDouble(fact.Groups[2].Value.Replace("mg", "").Replace("g", "").Replace("&lt;", "").Replace("&gt;", ""));
+                                                break;
+                                            case "total fat":
+                                                fat = Convert.ToDouble(fact.Groups[2].Value.Replace("mg", "").Replace("g", "").Replace("&lt;", "").Replace("&gt;", ""));
+                                                break;
+                                            case "dietary fiber":
+                                                fiber = Convert.ToDouble(fact.Groups[2].Value.Replace("mg", "").Replace("g", "").Replace("&lt;", "").Replace("&gt;", ""));
+                                                break;
+                                        }
+                                        break;
+                                }
+                            }
+                            stringBuilder.Append("WW pointsPlus: " + Math.Round((protein / 10.9375) + (carbs / 9.2105) + (fat / 3.8889) - (fiber / 12.5), 1));
+                            break;
+
+                        case "forecast":
+                            if (body.Length < 2)
+                            {
+                                body = "Cincinnati, OH";
+                            }
+                            await bot.SendChatActionAsync(update.Message.Chat.Id, ChatAction.Typing);
+                            dynamic dfor = JObject.Parse(httpClient.DownloadString("https://api.wunderground.com/api/" + wunderGroundKey + "/forcast/q/" + body + ".json").Result);
+                            if (dfor.forecast == null || dfor.forecast.txt_forecast == null)
+                            {
+                                replyText = "Trixie is disappointed " + body + "";
+                                break;
+                            }
+                            for (var ifor = 0; ifor < Enumerable.Count(dfor.forecast.txt_forecast.forecastday) - 1; ifor++)
+                            {
+                                stringBuilder.AppendLine(dfor.forecast.txt_forecast.forecastday[ifor].title.ToString() + ": " + dfor.forecast.txt_forecast.forecastday[ifor].fcttext.ToString());
+                            }
+                            break;
+
+                        case "/help":
+                            replyText = "";
+                            break;
+                        case "/image":
+                        case "/img":
+                            if (body == string.Empty)
+                            {
+                                replyText = "Usage/ image <Description of image to find>";
+                                break;
+                            }
+                            await bot.SendChatActionAsync(update.Message.Chat.Id, ChatAction.Typing);
+                            httpClient.AutherizationHeader = "Basic " + bingKey;
+                            dynamic dimg = JObject.Parse(httpClient.DownloadString("https://api.datamarket.azure.com/Data.ashx/Bing/Search/Image?Market=%27en-US%27&Adult=%27Moderate%27&Query=%27" + HttpUtility.UrlEncode(body) + "%27&$format=json&$top=3").Result);
+                            httpClient.AutherizationHeader = string.Empty;
+                            if (dimg.d == null || dimg.d.results == null || Enumerable.Count(dimg.d.results) < 1)
+                            {
+                                replyText = "";
+                                break;
+                            }
                             break;
                     }
                 }
